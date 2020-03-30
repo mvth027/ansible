@@ -1,0 +1,34 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+  - name: Install Java
+    yum:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - epel-release
+      - java-1.8.0-openjdk
+  - name: Download Jenkins
+    get_url:
+      url: https://pkg.jenkins.io/redhat-stable/jenkins-2.222.1-1.1.noarch.rpm
+      dest: /tmp/jenkins-2.222.1-1.1.noarch.rpm
+  - name: Install Jenkins
+    yum:
+      name: /tmp/jenkins-2.222.1-1.1.noarch.rpm
+      state: present
+  - name: Start Jenkins
+    service:
+      name: jenkins
+      state: started
+  - name: Get admin password
+    command: cat /var/lib/jenkins/secrets/initialAdminPassword
+    register: admin_pass
+    tags:
+    - get
+  - name: Show admin password
+    debug:
+      msg: Admin password is {{ admin_pass.stdout }}
+    tags:
+    - get
+
