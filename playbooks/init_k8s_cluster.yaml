@@ -1,0 +1,115 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+#first things first
+    - name: Disable Swap
+      shell:
+        cmd: |
+          swapoff -a
+    - name: Remove Swap from fstab
+      mount:
+        name: swap
+        fstype: swap
+        state: absent
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+#common tasks
+    - name: Install Docker
+      yum:
+        name: docker
+        state: present
+    - name: Enable&Start Docker
+      service:
+        name: docker
+        enabled: yes
+        state: started
+    - name: Add k8s repo
+      yum_repository:
+        name: kubernetes
+        description: kubernetes repo
+        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+        gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        gpgcheck: yes
+    - name: Install kubelet
+      yum:
+        name: kubelet
+        state: present
+    - name: Enable&Start kubelet
+      service:
+        name: kubelet
+        enabled: yes
+        state: started
+    - name: Install kubeadm
+      yum:
+        name: kubeadm
+        state: present
+    - name: Enable br_netfilter
+      shell: modprobe br_netfilter
+    - name: Set bridge-nf-call-iptables
+      sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: "1"
+        sysctl_set: yes
+        state: present
+        reload: yes
+
+# master configuration
+
+- hosts: master
+  become: yes
+  tasks:
+    - name: Install kubectl
+      yum:
+        name: kubectl
+        state: present
+    - name: Cluster init
+      shell: kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors all
+    - name: create .kube
+      file:
+        path: /home/cloud_user/.kube
+        state: directory
+        mode: 0755
+    - name: Copy admin.conf
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/cloud_user/.kube/config
+        remote_src: yes
+        owner: cloud_user
+    - name: Init pod network
+      become_user: cloud_user
+      shell: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+    - name: Get join command
+      command: kubeadm token create --print-join-command
+      register: join_command
+    - name: Copy join command to local file
+      copy:
+        dest: "join"
+        content: "{{ join_command.stdout_lines[0] }}"
+      delegate_to: localhost
+      become: false
+
+# workers configuration
+
+- hosts: workers
+  become: yes
+  tasks:
+    - name: Copy the join command to server location
+      copy:
+        src: "join"
+        dest: /tmp/join-command.sh
+        mode: 0777
+    - name: Join the node to cluster
+      command: sh /tmp/join-command.sh
+
+#clean-up
+
+- hosts: localhost
+  become: false
+  tasks:
+    - name: Clean-up
+      file:
+        path: join
+        state: absent
+      tags: clean
