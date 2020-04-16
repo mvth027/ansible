@@ -1,1 +1,0 @@
-kubeadm join 172.31.123.183:6443 --token purpyq.12jjh3wul2i7tdr5     --discovery-token-ca-cert-hash sha256:b47e209f5fa3e1a0474d348341de43608d26dcd624a13732ff5f1be68de75ea5 
